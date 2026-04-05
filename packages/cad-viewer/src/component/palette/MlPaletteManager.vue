@@ -12,6 +12,11 @@
           <ml-layer-list :editor="props.editor" />
         </div>
       </template>
+      <template #tab-pageNavigation>
+        <div class="ml-layer-list-wrapper">
+          <ml-page-list />
+        </div>
+      </template>
       <template #tab-entityProperties>
         <ml-entity-properties :entity-props-list="properties" />
       </template>
@@ -30,6 +35,7 @@ import { useSelectionSet } from '../../composable'
 import { toolPaletteTabName, toolPaletteTitle } from '../../locale'
 import MlEntityProperties from './MlEntityProperties.vue'
 import MlLayerList from './MlLayerList.vue'
+import MlPageList from './MlPageList.vue'
 
 /**
  * Properties of MlLayerList component
@@ -43,10 +49,12 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const tabNames = ['layerManager', 'entityProperties']
-const activeTab = ref<string>(tabNames[0])
+const tabNames = computed(() => {
+  return ['layerManager', 'pageNavigation', 'entityProperties']
+})
+const activeTab = ref<string>(tabNames.value[0])
 const tabs = computed<MlToolPaletteTab[]>(() => {
-  return tabNames.map(name => {
+  return tabNames.value.map(name => {
     return {
       name,
       label: toolPaletteTabName(name),

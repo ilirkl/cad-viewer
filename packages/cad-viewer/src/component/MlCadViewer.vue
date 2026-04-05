@@ -89,7 +89,7 @@ import {
 } from '@mlightcad/cad-simple-viewer'
 import { log } from '@mlightcad/data-model'
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { initializeCadViewer, store } from '../app'
@@ -112,6 +112,12 @@ import {
   MlMainMenu,
   MlToolBars
 } from './layout'
+
+const pdfConversionState = inject<{
+  isConverting: { value: boolean }
+  loadingMessage: { value: string }
+} | null>('pdfConversionState', null)
+
 import { MlNotificationCenter } from './notification'
 import { MlPaletteManager } from './palette'
 import { MlStatusBar } from './statusBar'
@@ -206,19 +212,116 @@ const { isShowToolbar } = useEntityDrawStyle(editor)
  * @param fileContent - File content as string (DXF) or ArrayBuffer (DWG)
  */
 const handleFileRead = async (fileName: string, fileContent: ArrayBuffer) => {
+  const isOriginalPdf = fileName.toLowerCase().endsWith('.pdf');
+
+  if (isOriginalPdf) {
+    try {
+      if ('__TAURI_INTERNALS__' in window) {
+        if (pdfConversionState) {
+          pdfConversionState.isConverting.value = true
+          pdfConversionState.loadingMessage.value = 'Initializing extraction engine...'
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const { tempDir, join } = await import('@tauri-apps/api/path')
+        const { writeFile, readFile } = await import('@tauri-apps/plugin-fs')
+        const { Command } = await import('@tauri-apps/plugin-shell')
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Preparing temporary files...'
+        }
+        const tempDirStr = await tempDir()
+        const inputPath = await join(tempDirStr, fileName)
+        const outputFileName = fileName.replace(/\.pdf$/i, '.dxf')
+        const outputPath = await join(tempDirStr, outputFileName)
+        const pngOutputPath = await join(tempDirStr, fileName.replace(/\.pdf$/i, '.png'))
+
+        await writeFile(inputPath, new Uint8Array(fileContent))
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Converting PDF to DXF (Geometric Extraction)...'
+        }
+        const command = Command.sidecar('binaries/pdfextract', [inputPath, outputPath, pngOutputPath])
+        const output = await command.execute()
+
+        if (output.code !== 0) {
+          throw new Error(`Extraction failed: ${output.stderr || output.stdout}`)
+        }
+
+        const pagesMetadata = JSON.parse(output.stdout)
+        
+        store.pdfPages = await Promise.all(pagesMetadata.map(async (p: any) => ({
+            ...p,
+            dxf_absolute_path: await join(tempDirStr, p.dxf),
+            png_absolute_path: await join(tempDirStr, p.png)
+        })))
+        store.activePdfPage = store.pdfPages[0].page
+
+        // Pre-read ALL page DXF files into memory and pre-compute PNG asset URLs
+        // so page switching is instant (no disk I/O needed later)
+        store.dxfDataCache.clear()
+        store.pngUrlCache.clear()
+        const { convertFileSrc } = await import('@tauri-apps/api/core')
+        await Promise.all(store.pdfPages.map(async (p) => {
+          const dxfData = await readFile(p.dxf_absolute_path)
+          store.dxfDataCache.set(p.page, dxfData.buffer as ArrayBuffer)
+          store.pngUrlCache.set(p.page, convertFileSrc(p.png_absolute_path))
+        }))
+
+        // Use cached data for the first page
+        fileName = store.pdfPages[0].dxf
+        fileContent = store.dxfDataCache.get(store.pdfPages[0].page)!
+        
+        success('Conversion Status', 'PDF successfully mapped to native DXF.')
+      } else {
+        throw new Error('PDF conversion is currently only supported in the native Desktop/Tauri application.')
+      }
+    } catch (err: any) {
+      error('PDF Import Error', err.message)
+      return
+    }
+  }
+
+  if (!isOriginalPdf) {
+    store.pdfPages = []
+    store.dxfDataCache.clear()
+    store.pngUrlCache.clear()
+  }
+
   const options: AcApOpenDatabaseOptions = {
     minimumChunkSize: 1000,
     mode: props.mode
   }
-  const success = await AcApDocManager.instance.openDocument(
+  const successLoad = await AcApDocManager.instance.openDocument(
     fileName,
     fileContent,
     options
   )
-  if (!success) {
+  if (!successLoad) {
     throw new Error('Failed to open file')
   }
   store.fileName = AcApDocManager.instance.curDocument.docTitle
+  
+  if (store.pdfPages.length > 0) {
+    const activePage = store.pdfPages.find(p => p.page === store.activePdfPage)
+    if (activePage && activePage.png_absolute_path) {
+      if ('__TAURI_INTERNALS__' in window) {
+        const { convertFileSrc } = await import('@tauri-apps/api/core')
+        const assetUrl = convertFileSrc(activePage.png_absolute_path)
+        const view = AcApDocManager.instance.curView as any
+        if (view.setBackgroundImage) {
+          view.setBackgroundImage(assetUrl, activePage.width_pts, activePage.height_pts)
+        }
+      }
+    }
+  } else {
+    const view = AcApDocManager.instance.curView as any
+    if (view.removeBackgroundImage) {
+      view.removeBackgroundImage()
+    }
+  }
+
+  // Auto zoom to fit all entities so the drawing is visible immediately
+  AcApDocManager.instance.curView?.zoomToFitDrawing()
 }
 
 /**
@@ -254,11 +357,14 @@ const openFileFromUrl = async (url: string) => {
  */
 const openLocalFile = async (file: File) => {
   try {
+    let fileName = file.name
+    let fileContent: ArrayBuffer
+    const isOriginalPdf = fileName.toLowerCase().endsWith('.pdf')
+
+    // Read the raw file bytes first
     const reader = new FileReader()
     reader.readAsArrayBuffer(file)
-
-    // Wait for file reading to complete
-    const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+    fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
       reader.onload = event => {
         const result = event.target?.result
         if (result) {
@@ -270,27 +376,128 @@ const openLocalFile = async (file: File) => {
       reader.onerror = () => reject(new Error('Failed to read file'))
     })
 
+    // If the file is a PDF, convert it via Tauri sidecar
+    if (isOriginalPdf) {
+      if ('__TAURI_INTERNALS__' in window) {
+        if (pdfConversionState) {
+          pdfConversionState.isConverting.value = true
+          pdfConversionState.loadingMessage.value = 'Initializing extraction engine...'
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const { tempDir, join } = await import('@tauri-apps/api/path')
+        const { writeFile, readFile } = await import('@tauri-apps/plugin-fs')
+        const { Command } = await import('@tauri-apps/plugin-shell')
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Preparing temporary files...'
+        }
+        const tempDirStr = await tempDir()
+        const inputPath = await join(tempDirStr, fileName)
+        const outputFileName = fileName.replace(/\.pdf$/i, '.dxf')
+        const outputPath = await join(tempDirStr, outputFileName)
+        const pngOutputPath = await join(tempDirStr, fileName.replace(/\.pdf$/i, '.png'))
+
+        await writeFile(inputPath, new Uint8Array(fileContent))
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Converting PDF to DXF (Geometric Extraction)...'
+        }
+        const command = Command.sidecar('binaries/pdfextract', [inputPath, outputPath, pngOutputPath])
+        const output = await command.execute()
+
+        if (output.code !== 0) {
+          throw new Error(`PDF extraction failed: ${output.stderr || output.stdout}`)
+        }
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Reading generated CAD data...'
+        }
+        
+        const pagesMetadata = JSON.parse(output.stdout)
+        store.pdfPages = await Promise.all(pagesMetadata.map(async (p: any) => ({
+            ...p,
+            dxf_absolute_path: await join(tempDirStr, p.dxf),
+            png_absolute_path: await join(tempDirStr, p.png)
+        })))
+        store.activePdfPage = store.pdfPages[0].page
+
+        // Pre-read ALL page DXF files into memory and pre-compute PNG asset URLs
+        store.dxfDataCache.clear()
+        store.pngUrlCache.clear()
+        const { convertFileSrc } = await import('@tauri-apps/api/core')
+        await Promise.all(store.pdfPages.map(async (p) => {
+          const dxfData = await readFile(p.dxf_absolute_path)
+          store.dxfDataCache.set(p.page, dxfData.buffer as ArrayBuffer)
+          store.pngUrlCache.set(p.page, convertFileSrc(p.png_absolute_path))
+        }))
+
+        // Use cached data for the first page
+        fileName = store.pdfPages[0].dxf
+        fileContent = store.dxfDataCache.get(store.pdfPages[0].page)!
+
+        if (pdfConversionState) {
+          pdfConversionState.loadingMessage.value = 'Finalizing...'
+        }
+      } else {
+        throw new Error('PDF conversion is only supported in the native Tauri application.')
+      }
+    }
+
+    if (!isOriginalPdf) {
+      store.pdfPages = []
+      store.dxfDataCache.clear()
+      store.pngUrlCache.clear()
+    }
+
     // Open the file using the document manager
     const options: AcApOpenDatabaseOptions = {
       minimumChunkSize: 1000,
       mode: props.mode
     }
-    const success = await AcApDocManager.instance.openDocument(
-      file.name,
+    const successLoad = await AcApDocManager.instance.openDocument(
+      fileName,
       fileContent,
       options
     )
-    if (!success) {
+    if (!successLoad) {
       throw new Error('Failed to open local file')
     }
     store.fileName = AcApDocManager.instance.curDocument.docTitle
-  } catch {
+    
+    if (store.pdfPages.length > 0) {
+      const activePage = store.pdfPages.find(p => p.page === store.activePdfPage)
+      if (activePage && activePage.png_absolute_path) {
+        if ('__TAURI_INTERNALS__' in window) {
+          const { convertFileSrc } = await import('@tauri-apps/api/core')
+          const assetUrl = convertFileSrc(activePage.png_absolute_path)
+          const view = AcApDocManager.instance.curView as any
+          if (view.setBackgroundImage) {
+            view.setBackgroundImage(assetUrl, activePage.width_pts, activePage.height_pts)
+          }
+        }
+      }
+    } else {
+      const view = AcApDocManager.instance.curView as any
+      if (view.removeBackgroundImage) {
+        view.removeBackgroundImage()
+      }
+    }
+
+    // Auto zoom to fit all entities so the drawing is visible immediately
+    AcApDocManager.instance.curView?.zoomToFitDrawing()
+  } catch (err: any) {
+    console.error('PDF/File open error:', err)
+    const message = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown error'
     ElMessage({
-      message: t('main.message.failedToOpenFile', { fileName: file.name }),
+      message: t('main.message.failedToOpenFile', { fileName: file.name }) + `: ${message}`,
       grouping: true,
       type: 'error',
       showClose: true
     })
+  } finally {
+    if (pdfConversionState) {
+      pdfConversionState.isConverting.value = false
+    }
   }
 }
 

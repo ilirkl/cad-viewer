@@ -689,9 +689,27 @@ export class AcTrView2d extends AcEdBaseView {
    */
   clear() {
     this._scene.clear()
+    this._scene.removeBackgroundImage()
     this._isDirty = true
     this._missedImages.clear()
     this._renderer.dispose()
+  }
+
+  /**
+   * Set the background image for the scene
+   */
+  setBackgroundImage(url: string, widthPts: number, heightPts: number) {
+    this._scene.setBackgroundImage(url, widthPts, heightPts, () => {
+      this._isDirty = true
+    })
+  }
+
+  /**
+   * Remove background image from scene
+   */
+  removeBackgroundImage() {
+    this._scene.removeBackgroundImage()
+    this._isDirty = true
   }
 
   /**

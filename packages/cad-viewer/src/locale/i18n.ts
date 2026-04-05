@@ -39,7 +39,7 @@ const messages = {
 AcApI18n.mergeLocaleMessage('en', messages.en)
 AcApI18n.mergeLocaleMessage('zh', messages.zh)
 
-export const i18n = createI18n({
+export const i18n: any = createI18n({
   legacy: false,
   messages: AcApI18n.messages,
   locale: getInitialLocale(),

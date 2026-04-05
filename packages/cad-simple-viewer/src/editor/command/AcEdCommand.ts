@@ -220,6 +220,15 @@ export abstract class AcEdCommand<TUserData extends object = {}> {
       this.onCommandWillStart(context)
       context.view.editor.events.commandWillStart.dispatch({ command: this })
       await this.execute(context)
+    } catch (err: unknown) {
+      // Pressing Escape during any input operation (getPoint, getDistance, etc.)
+      // rejects the promise with Error('cancelled'). This is normal user behavior,
+      // not an actual error — swallow it silently.
+      if (err instanceof Error && err.message === 'cancelled') {
+        // User cancelled the command — nothing to do.
+      } else {
+        throw err
+      }
     } finally {
       context.view.editor.events.commandEnded.dispatch({ command: this })
       this.onCommandEnded(context)

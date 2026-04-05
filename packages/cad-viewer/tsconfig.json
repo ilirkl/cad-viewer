@@ -4,6 +4,8 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": "./src",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "lib": [
       "ESNext",
       "DOM"

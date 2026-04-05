@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/pdfextract",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    "fs:default",
+    {
+      "identifier": "fs:allow-temp-write",
+      "allow": [{ "path": "$TEMP/**" }]
+    },
+    {
+      "identifier": "fs:allow-temp-read",
+      "allow": [{ "path": "$TEMP/**" }]
+    },
+    "dialog:default"
+  ]
+}

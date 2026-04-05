@@ -134,6 +134,10 @@ export default {
     }
   },
   toolPalette: {
+    pageNavigation: {
+      tab: 'Pages',
+      title: 'Page Navigation'
+    },
     entityProperties: {
       tab: 'Properties',
       title: 'Entity Properties',

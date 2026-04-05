@@ -24,6 +24,9 @@
           class="ml-status-bar-current-pos"
           >{{ posText }}</el-button
         >
+      </el-button-group>
+      <el-button-group class="ml-status-bar-right-button-group">
+        <ml-scale-selector v-if="!isMobile" />
         <ml-warning-button />
         <ml-notification-button @click="toggleNotificationCenter" />
         <ml-theme-button
@@ -43,6 +46,7 @@
 import { AcApDocManager } from '@mlightcad/cad-simple-viewer'
 import { acdbHostApplicationServices } from '@mlightcad/data-model'
 import { MlStatusBar } from '@mlightcad/ui-components'
+import { onErrorCaptured } from 'vue'
 
 import {
   LayoutInfo,
@@ -56,9 +60,17 @@ import MlNotificationButton from './MlNotificationButton.vue'
 import MlOsnapButton from './MlOsnapButton.vue'
 import MlPointStyleButton from './MlPointStyleButton.vue'
 import MlProgress from './MlProgress.vue'
+import MlScaleSelector from './MlScaleSelector.vue'
 import MlSettingButton from './MlSettingButton.vue'
 import MlThemeButton from './MlThemeButton.vue'
 import MlWarningButton from './MlWarningButton.vue'
+
+onErrorCaptured((err, instance, info) => {
+  console.error('Captured error in MlStatusBar:', err, info)
+  alert('Vue Rendering Error in StatusBar: ' + err)
+  // return false to stop propagation
+  return false
+})
 
 const props = defineProps<{
   isDark: boolean
@@ -90,10 +102,31 @@ const toggleNotificationCenter = () => {
   box-sizing: border-box;
 }
 
+/* Remove black background from all icons and bar components */
+:deep(.el-button),
+:deep(.el-button-group > .el-button),
+:deep(.ml-status-bar-button) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: var(--el-text-color-regular) !important;
+}
+
+:deep(.el-button:hover),
+:deep(.el-button:focus) {
+  background-color: var(--el-fill-color-light) !important;
+  color: var(--el-color-primary) !important;
+}
+
+:deep(.el-button.is-active),
+:deep(.el-button:active) {
+  background-color: var(--el-fill-color-dark) !important;
+}
+
 .ml-status-bar-left-button-group {
   border: none;
   box-sizing: border-box;
   height: var(--ml-status-bar-height);
+  background: transparent;
 }
 
 .ml-status-bar-layout-button {
@@ -104,6 +137,9 @@ const toggleNotificationCenter = () => {
   border: none;
   padding: 0px;
   height: var(--ml-status-bar-height);
+  background: transparent;
+  display: flex;
+  align-items: center;
 }
 
 .ml-status-bar-current-pos {

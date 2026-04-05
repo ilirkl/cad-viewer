@@ -23,10 +23,12 @@ import {
   makeDot,
   makeLiveBadge,
   makeOverlayCanvas,
-  measurementColor
+  measurementColor,
+  formatArea
 } from '../util'
 import { AcTrView2d } from '../view'
 import { registerMeasurementCleanup } from './AcApClearMeasurementsCmd'
+import { AcApSettingManager } from '../app/AcApSettingManager'
 
 /**
  * Rubber-band jig: shows a preview line from the last confirmed
@@ -177,6 +179,7 @@ export class AcApMeasureAreaCmd extends AcEdCommand {
 
     // Live area badge shown while the jig is active — also removed before returning
     const liveBadge = makeLiveBadge(color)
+    const scale = AcApSettingManager.instance.measurementScale
 
     await context.view.withMode(AcEdViewMode.SELECTION, () =>
       editor.withCursor(AcEdCorsorType.Crosshair, async () => {
@@ -254,7 +257,7 @@ export class AcApMeasureAreaCmd extends AcEdCommand {
               if (points.length < 2) return
               const tempPts = [...points, cursor]
               const area = shoelaceArea(tempPts)
-              liveBadge.textContent = `~ ${area.toFixed(3)} m²`
+              liveBadge.textContent = `~ ${formatArea(area, scale)}`
               liveBadge.style.display = ''
               const mid = centroid(tempPts)
               const rect = context.view.canvas.getBoundingClientRect()
@@ -328,7 +331,7 @@ export class AcApMeasureAreaCmd extends AcEdCommand {
 
         htManager.add(
           `${id}-badge`,
-          makeBadge(color, `~ ${area.toFixed(3)} m²`),
+          makeBadge(color, `~ ${formatArea(area, scale)}`),
           mid,
           'measurement'
         )

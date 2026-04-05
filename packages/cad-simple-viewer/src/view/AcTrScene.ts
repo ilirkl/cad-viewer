@@ -89,6 +89,8 @@ export class AcTrScene {
   private _transientManager: AcTrTransientManager
   /** HTML transient elements manager */
   private _htmlTransientManager: AcTrHtmlTransientManager
+  /** Background mesh for rasterized PDF page */
+  private _bgMesh?: THREE.Mesh
 
   /**
    * Creates a new CAD scene instance.
@@ -103,6 +105,60 @@ export class AcTrScene {
     this._layouts = new Map()
     this._activeLayoutBtrId = ''
     this._modelSpaceBtrId = ''
+  }
+
+  /**
+   * Set the background image for the scene (for hybrid PDF rendering)
+   */
+  setBackgroundImage(url: string, widthPts: number, heightPts: number, callback?: () => void) {
+    this.removeBackgroundImage()
+
+    const textureLoader = new THREE.TextureLoader()
+    textureLoader.load(url, (texture) => {
+      const geometry = new THREE.PlaneGeometry(widthPts, heightPts)
+      const material = new THREE.MeshBasicMaterial({ 
+        map: texture, 
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+      
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(widthPts / 2, heightPts / 2, -10)
+      mesh.renderOrder = -100 // ensure it renders first
+      mesh.userData.isBackground = true
+      
+      this._scene.add(mesh)
+      this._bgMesh = mesh
+
+      if (callback) callback()
+    }, undefined, (err) => {
+      log.error('Failed to load background image:', err)
+    })
+  }
+
+  /**
+   * Remove the current background image
+   */
+  removeBackgroundImage() {
+    if (this._bgMesh) {
+      this._scene.remove(this._bgMesh)
+      if (this._bgMesh.material) {
+        if (Array.isArray(this._bgMesh.material)) {
+            this._bgMesh.material.forEach(m => {
+                const mat = m as THREE.MeshBasicMaterial
+                if (mat.map) mat.map.dispose()
+                m.dispose()
+            })
+        } else {
+            const mat = this._bgMesh.material as THREE.MeshBasicMaterial
+            if (mat.map) mat.map.dispose()
+            mat.dispose()
+        }
+      }
+      this._bgMesh.geometry.dispose()
+      this._bgMesh = undefined
+    }
   }
 
   /**

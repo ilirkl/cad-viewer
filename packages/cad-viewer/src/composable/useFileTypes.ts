@@ -7,6 +7,7 @@ export function useFileTypes() {
   for (const item of register.fileTypes) {
     fileTypes.value.add(item)
   }
+  fileTypes.value.add('pdf') // Register PDF manually for Tauri sidecar conversion
   register.events.registered.addEventListener(args => {
     fileTypes.value.add(args.fileType)
   })

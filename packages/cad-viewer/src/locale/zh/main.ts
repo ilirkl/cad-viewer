@@ -127,6 +127,10 @@ export default {
     }
   },
   toolPalette: {
+    pageNavigation: {
+      tab: '页面',
+      title: '页面导航'
+    },
     entityProperties: {
       tab: '属性',
       title: '图元属性',

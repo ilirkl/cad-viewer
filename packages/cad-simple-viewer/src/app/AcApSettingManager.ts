@@ -4,6 +4,7 @@ import {
   acdbOsnapModesToMask
 } from '@mlightcad/data-model'
 import { defaults } from 'lodash-es'
+import { MeasurementScale, METRIC_SCALES } from '../util'
 
 /**
  * Font mappings for CAD text rendering.
@@ -50,6 +51,8 @@ export interface AcApSettings {
   fontMapping: AcApFontMapping
   /** Object snap modes */
   osnapModes: number
+  /** Measurement scale configuration */
+  measurementScale: MeasurementScale
 }
 
 /** Default values for all application settings */
@@ -70,7 +73,8 @@ const DEFAULT_VALUES: AcApSettings = {
     AcDbOsnapMode.Center,
     AcDbOsnapMode.Quadrant,
     AcDbOsnapMode.Nearest
-  ])
+  ]),
+  measurementScale: METRIC_SCALES[0] // Default to 1:1 Metric
 }
 
 /** Local storage key for persisting settings */
@@ -419,6 +423,24 @@ export class AcApSettingManager<T extends AcApSettings = AcApSettings> {
    */
   set osnapModes(value: number) {
     this.set('osnapModes', value)
+  }
+
+  /**
+   * Gets the measurement scale configuration.
+   *
+   * @returns The current measurement scale configuration.
+   */
+  get measurementScale() {
+    return this.get('measurementScale')
+  }
+
+  /**
+   * Sets the measurement scale configuration.
+   *
+   * @param value - The new measurement scale configuration.
+   */
+  set measurementScale(value: MeasurementScale) {
+    this.set('measurementScale', value)
   }
 
   /**

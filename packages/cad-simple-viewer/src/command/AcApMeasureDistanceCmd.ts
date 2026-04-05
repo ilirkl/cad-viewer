@@ -16,7 +16,8 @@ import {
   AcEdViewMode
 } from '../editor'
 import { AcApI18n } from '../i18n'
-import { makeBadge, makeDot, makeLiveBadge, measurementColor } from '../util'
+import { makeBadge, makeDot, makeLiveBadge, measurementColor, formatDistance, MeasurementScale } from '../util'
+import { AcApSettingManager } from '../app/AcApSettingManager'
 import { AcTrView2d } from '../view'
 import { registerMeasurementCleanup } from './AcApClearMeasurementsCmd'
 
@@ -40,11 +41,13 @@ export class AcApMeasureDistanceJig extends AcEdPreviewJig<AcGePoint3dLike> {
   private _p1: AcGePoint3dLike
   private _view: AcEdBaseView
   private _badge: HTMLDivElement
+  private _scale: MeasurementScale
 
-  constructor(view: AcEdBaseView, p1: AcGePoint3dLike, color: AcCmColor) {
+  constructor(view: AcEdBaseView, p1: AcGePoint3dLike, color: AcCmColor, scale: MeasurementScale) {
     super(view)
     this._p1 = p1
     this._view = view
+    this._scale = scale
     this._line = new AcDbLine(p1, p1)
     this._line.color = color
     this._line.lineWeight = AcGiLineWeight.LineWeight070
@@ -66,7 +69,7 @@ export class AcApMeasureDistanceJig extends AcEdPreviewJig<AcGePoint3dLike> {
       return
     }
 
-    this._badge.textContent = `~ ${dist.toFixed(3)} m`
+    this._badge.textContent = `~ ${formatDistance(dist, this._scale)}`
     this._badge.style.display = 'block'
 
     const mid = { x: (this._p1.x + p2.x) / 2, y: (this._p1.y + p2.y) / 2 }
@@ -111,7 +114,8 @@ export class AcApMeasureDistanceCmd extends AcEdCommand {
           AcApI18n.t('jig.measureDistance.secondPoint')
         )
         p2Prompt.useBasePoint = true
-        p2Prompt.jig = new AcApMeasureDistanceJig(context.view, p1, color)
+        const scale = AcApSettingManager.instance.measurementScale
+        p2Prompt.jig = new AcApMeasureDistanceJig(context.view, p1, color, scale)
         const p2 = await editor.getPoint(p2Prompt)
 
         const dist = calcDist(p1, p2)
@@ -131,7 +135,7 @@ export class AcApMeasureDistanceCmd extends AcEdCommand {
         htManager.add(`${id}-dot2`, makeDot(color), p2, 'measurement')
         htManager.add(
           `${id}-badge`,
-          makeBadge(color, `~ ${dist.toFixed(3)} m`),
+          makeBadge(color, `~ ${formatDistance(dist, scale)}`),
           mid,
           'measurement'
         )
